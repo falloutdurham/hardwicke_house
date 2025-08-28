@@ -17,7 +17,7 @@
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         
-        <lucene.version>9.7.0</lucene.version>
+        <lucene.version>9.10.0</lucene.version>
         <gcs.version>2.26.1</gcs.version>
         <picocli.version>4.7.5</picocli.version>
         <logback.version>1.4.11</logback.version>

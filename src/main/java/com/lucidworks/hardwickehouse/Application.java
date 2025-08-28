@@ -30,6 +30,14 @@ public class Application implements Callable<Integer> {
                 description = "Source Lucene index GCS path (gs://bucket/path)")
         private String gcsSourcePath;
         
+        @Option(names = {"--backup-properties"}, 
+                description = "Path to Solr backup properties file")
+        private String backupPropertiesPath;
+        
+        @Option(names = {"--backup-directory"}, 
+                description = "Path to Solr backup directory (required with --backup-properties)")
+        private String backupDirectoryPath;
+        
         @Option(names = {"-o", "--output"}, 
                 description = "Output JSONL file path (local)")
         private String outputPath;
@@ -61,9 +69,18 @@ public class Application implements Callable<Integer> {
         public Integer call() throws Exception {
             logger.info("Starting Lucene to JSONL conversion");
             
-            if ((sourcePath == null && gcsSourcePath == null) || 
-                (sourcePath != null && gcsSourcePath != null)) {
-                logger.error("Must specify exactly one of --source or --gcs-source");
+            int sourceCount = 0;
+            if (sourcePath != null) sourceCount++;
+            if (gcsSourcePath != null) sourceCount++;
+            if (backupPropertiesPath != null) sourceCount++;
+            
+            if (sourceCount != 1) {
+                logger.error("Must specify exactly one of --source, --gcs-source, or --backup-properties");
+                return 1;
+            }
+            
+            if (backupPropertiesPath != null && backupDirectoryPath == null) {
+                logger.error("--backup-directory is required when using --backup-properties");
                 return 1;
             }
             
@@ -82,13 +99,21 @@ public class Application implements Callable<Integer> {
                 ConversionService conversionService = new ConversionService(
                     storageService, progressReporter, indexReader, jsonLWriter);
                 
-                String sourceLocation = sourcePath != null ? sourcePath : gcsSourcePath;
-                String outputLocation = outputPath != null ? outputPath : gcsOutputPath;
-                boolean useGcsSource = gcsSourcePath != null;
-                boolean useGcsOutput = gcsOutputPath != null;
-                
-                conversionService.convert(sourceLocation, outputLocation, 
-                                        useGcsSource, useGcsOutput, batchSize, compress);
+                if (backupPropertiesPath != null) {
+                    String outputLocation = outputPath != null ? outputPath : gcsOutputPath;
+                    boolean useGcsOutput = gcsOutputPath != null;
+                    
+                    conversionService.convertFromBackup(backupPropertiesPath, backupDirectoryPath,
+                                                      outputLocation, useGcsOutput, batchSize, compress);
+                } else {
+                    String sourceLocation = sourcePath != null ? sourcePath : gcsSourcePath;
+                    String outputLocation = outputPath != null ? outputPath : gcsOutputPath;
+                    boolean useGcsSource = gcsSourcePath != null;
+                    boolean useGcsOutput = gcsOutputPath != null;
+                    
+                    conversionService.convert(sourceLocation, outputLocation, 
+                                            useGcsSource, useGcsOutput, batchSize, compress);
+                }
                 
                 logger.info("Conversion completed successfully");
                 return 0;

@@ -3,6 +3,7 @@ package com.lucidworks.hardwickehouse;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.index.MultiReader;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.NIOFSDirectory;
 import org.slf4j.Logger;
@@ -21,16 +22,42 @@ public class IndexReader {
     
     private static final Logger logger = LoggerFactory.getLogger(IndexReader.class);
     
-    private DirectoryReader reader;
+    private org.apache.lucene.index.IndexReader reader;
+    private List<DirectoryReader> shardReaders;
     private int currentDocIndex = 0;
     private JsonLSchema schema;
+    private boolean isMultiShard = false;
     
     public void initialize(Path indexPath) throws IOException {
         logger.info("Opening Lucene index at: {}", indexPath);
         NIOFSDirectory directory = new NIOFSDirectory(indexPath);
         reader = DirectoryReader.open(directory);
+        isMultiShard = false;
         
         logger.info("Index opened successfully. Total documents: {}", reader.numDocs());
+        
+        schema = inferSchema();
+        logger.info("Schema inference completed. Found {} fields", schema.getFieldCount());
+    }
+    
+    public void initializeMultiShard(List<Path> indexPaths) throws IOException {
+        logger.info("Opening {} shard indexes", indexPaths.size());
+        
+        shardReaders = new ArrayList<>();
+        List<DirectoryReader> readers = new ArrayList<>();
+        
+        for (Path indexPath : indexPaths) {
+            logger.info("Opening shard index at: {}", indexPath);
+            NIOFSDirectory directory = new NIOFSDirectory(indexPath);
+            DirectoryReader shardReader = DirectoryReader.open(directory);
+            shardReaders.add(shardReader);
+            readers.add(shardReader);
+        }
+        
+        reader = new MultiReader(readers.toArray(new org.apache.lucene.index.IndexReader[0]));
+        isMultiShard = true;
+        
+        logger.info("Multi-shard index opened successfully. Total documents: {}", reader.numDocs());
         
         schema = inferSchema();
         logger.info("Schema inference completed. Found {} fields", schema.getFieldCount());
@@ -134,6 +161,13 @@ public class IndexReader {
     }
     
     public void close() throws IOException {
+        if (isMultiShard && shardReaders != null) {
+            for (DirectoryReader shardReader : shardReaders) {
+                shardReader.close();
+            }
+            logger.info("Multi-shard Lucene index readers closed");
+        }
+        
         if (reader != null) {
             reader.close();
             logger.info("Lucene index reader closed");
